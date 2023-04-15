@@ -464,7 +464,7 @@
           <systemPropertyVariables>
             <logback.configurationFile>${basedir}/src/test/resources/logback-test.xml</logback.configurationFile>
           </systemPropertyVariables>
-          <argLine>-Xmx512m -Dwebgoatport=${webgoat.port} -Dwebwolfport=${webwolf.port}</argLine>
+          <argLine>-Xmx512m -Dwebgoatport=8083 -Dwebwolfport=${webwolf.port}</argLine>
           <includes>org/owasp/webgoat/*Test</includes>
         </configuration>
         <executions>
