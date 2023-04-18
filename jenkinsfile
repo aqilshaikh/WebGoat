@@ -1,0 +1,195 @@
+
+pipeline {
+  agent any
+  
+//  options {
+    // Enable timestamps for the console output
+//    timestamps()
+//  }
+  
+  stages {
+  /*  
+       stage('Clean worspace') {
+          steps {
+            cleanWs()
+          }
+        
+       }
+      
+       */
+   
+   
+   
+   
+   
+   
+   
+    stage('Checkout') {
+
+      steps {
+        git branch: 'main', url: 'https://github.com/aqilshaikh/WebGoat.git'
+        
+      }
+    }
+    
+
+    stage ('Check-Git-Secrets') {
+      steps {
+        sh 'rm trufflehog.html || true'
+        sh 'docker run gesellix/trufflehog --regex --entropy=False https://github.com/aqilshaikh/WebGoat.git > trufflehog.html'
+        sh 'cat trufflehog.html'
+      }
+    }
+  
+	stage ('Source-Composition-Analysis') 
+       {
+		steps {
+		     sh 'rm owasp-* || true'
+             sh 'ls'
+		    // sh 'chmod 777 owasp-dependency-check.sh'
+		     sh 'bash /home/kali/Desktop/owasp-dependency-check.sh '
+		     sh 'cat dependency-check-report.json'
+             
+		}
+	}
+	
+    stage('Build') {
+      steps {
+    sh 'rm target/*.jar | true'
+    sh 'mvn clean install'
+
+
+
+      }
+    }
+    
+
+stage('SAST') {
+    steps {
+        withCredentials([usernamePassword(credentialsId: 'Sonarqube', usernameVariable: 'SONARQUBE_USERNAME', passwordVariable: 'SONARQUBE_PASSWORD')]) {
+            withSonarQubeEnv('sonar') {
+                sh "mvn sonar:sonar -Dsonar.login=${env.SONARQUBE_USERNAME} -Dsonar.password=${env.SONARQUBE_PASSWORD}"
+            }
+        }
+    }
+}
+
+
+
+    stage('Deploy') {
+     steps {
+         sh 'ls'
+       // Copy the built WAR file to the remote Tomcat server using the private key for authentication
+  //      sh "scp -i /var/lib/jenkins/.ssh/id_rsa.pub -o StrictHostKeyChecking=no target/*.jar Administrator@172.16.1.40:'C:/Program Files/Apache Foundation Software/Tomcat 9.0/webapps/'"
+//        sh 'scp /var/lib/jenkins/workspace/Capstone1/target/webgoat-2023.5-SNAPSHOT.jar Administrator@172.16.1.40:C:\Program\ Files\Apache\ Foundation\ Software\Tomcat\ 9.0\webapps'
+      // sh 'target/*.jar /opt/tomcat/apache-tomcat-8.5.87/webapps/'
+      //  sh 'nohup java -jar target/*.jar > app.log 2>&1 &'
+        // Restart Tomcat
+     //  sh 'tomcatdown'
+   //  sh 'tomcatup'
+   //     sh ' systemctl restart tomcat'
+        }
+        }
+    stage ('Trivy: configuration and IaC review') {
+		  
+		    	steps {
+                     
+			     script {
+               
+        
+         sh "trivy fs /var/lib/jenkins/workspace/Capstone1/ > trivy.txt || true"
+                     sh "trivy conf  -f json -o trivy.json ./var/lib/jenkins/workspace/Capstone1/ || true"
+                    sh "cat trivy.json || true"                                       
+                    
+                    }
+                  }
+                  }    
+        
+        
+      
+/*
+    stage('Dockle') {
+     steps {        
+        sh 'docker run --rm -v ${WORKSPACE}:/workspace goodwithtech/dockle:0.5.0 -f json -o /workspace/dockle-report.json /workspace/target/*.jar'
+        sleep time: 20, unit: 'SECONDS'
+     }
+    }
+
+*/
+    /*
+    stage('DAST-ZAP') {
+     steps {      
+        // Run ZAP Proxy in a Docker container
+       sh 'sudo docker run --rm -v ${WORKSPACE}:/zap/wrk -t owasp/zap2docker-stable zap-baseline.py -r zap-report.html -t http://172.16.1.40:8080/WebGoat/'
+     }
+    }
+     */
+     
+     
+      stage ('DAST - Zap') {
+		  
+		    	steps {
+                
+			     script {
+                     sh 'rm /home/kali/zap.xml || true'
+                     sh "sudo docker run -v /home/kali:/zap/wrk/:rw -t owasp/zap2docker-stable zap-baseline.py -t http://172.16.1.40:8080/WebGoat/ -g gen.conf -x zap.xml || true"
+                     sh " cat /home/kali/zap.xml || true"
+                     
+           
+			    }  
+			}
+		} 
+     
+     /*
+     		stage('ZAP Scan') {
+    steps {
+        script {
+            // Start ZAP container
+            sh 'docker run -d -t --name zap -p 8888:8080 owasp/zap2docker-stable'
+
+            // Wait for ZAP to start
+            sh 'docker exec zap zap.sh -daemon -host 0.0.0.0 -port 8080'
+            sleep 30 // Adjust wait time as needed
+
+            // Run ZAP scan
+            sh 'docker exec zap zap.sh -cmd -quickurl 172.16.1.40:8080/WebGoat -quickprogress -quickout zap.xml'
+
+            // Generate ZAP report
+            sh 'docker exec zap zap.sh -cmd -report html -file zap-report.html -source zap.xml'
+
+            // Stop and remove ZAP container
+            sh 'docker stop zap'
+            sh 'docker rm zap'
+        }
+    }
+}
+*/
+         stage('PORT-Scanning-NMAP') {
+     steps {  
+        // Run Nmap for port scanning
+        sh 'nmap -Pn 172.16.1.40 > nmap-report.txt'
+      }
+         }
+       stage ('Web Vulnerability Scanner-Nikto Scan')       
+            {
+		    steps {
+			sh 'rm nikto-output.xml || true'
+			sh 'docker pull secfigo/nikto:latest'
+			sh 'sudo docker run --user $(id -u):$(id -g) --rm -v $(pwd):/report -i secfigo/nikto:latest -h http://172.16.1.40:8080/WebGoat /report/nikto-output.xml'
+			sh 'cat nikto-output.xml || true'   
+		    }
+            }
+        stage ('Artifacts'){    
+ 		    steps {           
+
+          // Archive the security scan reports
+          archiveArtifacts artifacts: 'dependency-check-report.html, trufflehog.html, trivy.txt, /home/kali/zap.xml, nmap-report.txt, nikto-output.xml', allowEmptyArchive: true
+        
+      }
+     
+    }
+  }
+}
+  
+  
+
